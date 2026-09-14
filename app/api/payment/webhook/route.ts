@@ -47,12 +47,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Transaction not successful' }, { status: 200 });
     }
 
-    const expectedAmountMinor =
-      transactionRecord.interval === 'YEARLY'
-        ? Number(process.env.PRO_YEARLY_PRICE_MINOR ?? 5000000)
-        : Number(process.env.PRO_MONTHLY_PRICE_MINOR ?? 500000);
-
-    const expectedAmount = expectedAmountMinor / 100;
+    // The Transaction's own amountMinor is the exact amount that was quoted for
+    // this charge — the full plan price for a SUBSCRIPTION_CHARGE, or the
+    // prorated amount for an UPGRADE. Comparing against it (rather than
+    // recomputing a full plan price from env vars) works correctly for both.
+    const expectedAmount = (transactionRecord.amountMinor ?? 0) / 100;
 
     if (Number(verifiedTransaction.amount) !== expectedAmount) {
       await prisma.transaction.update({
@@ -63,6 +62,7 @@ export async function POST(request: Request) {
       console.error('[POST /api/payment/webhook] Verified amount does not match expected amount', {
         transactionId: transactionRecord.id,
         txRef,
+        type: transactionRecord.type,
         interval: transactionRecord.interval,
         expectedAmount,
         verifiedAmount: verifiedTransaction.amount,
@@ -71,8 +71,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Amount mismatch' }, { status: 200 });
     }
 
-    const periodDays = transactionRecord.interval === 'YEARLY' ? 365 : 30;
     const currentPeriodStart = new Date();
+
+    if (transactionRecord.type === 'UPGRADE') {
+      const currentPeriodEnd = new Date(currentPeriodStart.getTime() + 365 * MS_PER_DAY);
+
+      await prisma.$transaction([
+        prisma.transaction.update({
+          where: { id: transactionRecord.id },
+          data: { status: 'SUCCEEDED' },
+        }),
+        prisma.subscription.update({
+          where: { userId: transactionRecord.userId },
+          data: {
+            interval: 'YEARLY',
+            currentPeriodStart,
+            currentPeriodEnd,
+            status: 'ACTIVE',
+            cancelAtPeriodEnd: false,
+          },
+        }),
+      ]);
+
+      return NextResponse.json({ message: 'Webhook processed' }, { status: 200 });
+    }
+
+    const periodDays = transactionRecord.interval === 'YEARLY' ? 365 : 30;
     const currentPeriodEnd = new Date(currentPeriodStart.getTime() + periodDays * MS_PER_DAY);
 
     await prisma.$transaction([
