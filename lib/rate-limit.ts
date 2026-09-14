@@ -1,64 +1,93 @@
-import { Ratelimit } from '@upstash/ratelimit';
+import { randomUUID } from 'crypto';
 import IORedis from 'ioredis';
 
 if (!process.env.REDIS_URL) {
   throw new Error('REDIS_URL environment variable is not set');
 }
 
-const redisClient = new IORedis(process.env.REDIS_URL);
+const redis = new IORedis(process.env.REDIS_URL);
 
 /**
- * @upstash/ratelimit is built for @upstash/redis's REST client. This adapts
- * a standard ioredis connection (used here since Redis is self-hosted, not
- * Upstash-hosted) to the subset of that interface the library actually
- * calls at runtime: evalsha/eval to run its Lua scripts, with get/set
- * included to satisfy the library's declared type.
+ * Sliding window rate limiter backed by a Redis sorted set: each request's
+ * timestamp is a member, entries older than the window are trimmed, and the
+ * remaining count decides the limit. Standard EVAL — no proprietary flags.
  */
-const redis = {
-  eval: <TArgs extends unknown[], TData = unknown>(script: string, keys: string[], args: TArgs) =>
-    redisClient.eval(script, keys.length, ...keys, ...(args as unknown as (string | number)[])) as Promise<TData>,
-  evalsha: <TArgs extends unknown[], TData = unknown>(sha1: string, keys: string[], args: TArgs) =>
-    redisClient.evalsha(sha1, keys.length, ...keys, ...(args as unknown as (string | number)[])) as Promise<TData>,
-  get: <TData>(key: string) => redisClient.get(key) as Promise<TData | null>,
-  set: <TData>(key: string, value: TData) => redisClient.set(key, String(value)) as Promise<'OK' | TData | null>,
+const SLIDING_WINDOW_SCRIPT = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local member = ARGV[4]
+
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
+
+local count = redis.call('ZCARD', key)
+
+if count < limit then
+  redis.call('ZADD', key, now, member)
+  redis.call('PEXPIRE', key, window)
+  return {1, 0}
+end
+
+local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+local retryAfterMs = 0
+if oldest[2] then
+  retryAfterMs = (tonumber(oldest[2]) + window) - now
+end
+
+return {0, retryAfterMs}
+`;
+
+interface RateLimiter {
+  limit: number;
+  windowMs: number;
+  prefix: string;
+}
+
+export const signInLimiter: RateLimiter = {
+  limit: 10,
+  windowMs: 10 * 60 * 1000,
+  prefix: 'ratelimit:sign-in',
 };
 
-export const signInLimiter = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(10, '10 m'),
-  prefix: 'ratelimit:sign-in',
-});
-
-export const signUpLimiter = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(5, '10 m'),
+export const signUpLimiter: RateLimiter = {
+  limit: 5,
+  windowMs: 10 * 60 * 1000,
   prefix: 'ratelimit:sign-up',
-});
+};
 
-export const passwordResetLimiter = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(5, '10 m'),
+export const passwordResetLimiter: RateLimiter = {
+  limit: 5,
+  windowMs: 10 * 60 * 1000,
   prefix: 'ratelimit:password-reset',
-});
+};
 
-export const resendLimiter = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(1, '1 m'),
+export const resendLimiter: RateLimiter = {
+  limit: 1,
+  windowMs: 60 * 1000,
   prefix: 'ratelimit:resend',
-});
+};
 
 export async function checkRateLimit(
-  limiter: Ratelimit,
+  limiter: RateLimiter,
   identifier: string
 ): Promise<{ success: boolean; retryAfter: number }> {
-  const { success, reset } = await limiter.limit(identifier);
+  const now = Date.now();
+  const member = `${now}-${randomUUID()}`;
 
-  if (success) {
+  const [success, retryAfterMs] = (await redis.eval(
+    SLIDING_WINDOW_SCRIPT,
+    1,
+    `${limiter.prefix}:${identifier}`,
+    now,
+    limiter.windowMs,
+    limiter.limit,
+    member
+  )) as [number, number];
+
+  if (success === 1) {
     return { success: true, retryAfter: 0 };
   }
 
-  return {
-    success: false,
-    retryAfter: Math.max(0, Math.ceil((reset - Date.now()) / 1000)),
-  };
+  return { success: false, retryAfter: Math.max(0, Math.ceil(retryAfterMs / 1000)) };
 }
