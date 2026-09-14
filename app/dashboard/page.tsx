@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth, signOut } from '../../auth';
+import { prisma } from '../../lib/db';
 import PlansView from '../_components/PlansView';
+import ReturnView from '../_components/ReturnView';
 import styles from './page.module.css';
 
 interface DashboardPageProps {
@@ -11,12 +13,20 @@ interface DashboardPageProps {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const session = await auth();
 
-  if (!session) {
+  if (!session?.user?.id) {
     redirect('/?view=signin');
   }
 
   const { view } = await searchParams;
-  const activeView = view === 'billing' ? 'billing' : 'plans';
+  const activeView = view === 'billing' || view === 'return' ? view : 'plans';
+
+  const subscription =
+    activeView === 'plans'
+      ? await prisma.subscription.findUnique({ where: { userId: session.user.id } })
+      : null;
+
+  const monthlyPriceMinor = Number(process.env.PRO_MONTHLY_PRICE_MINOR ?? 500000);
+  const yearlyPriceMinor = Number(process.env.PRO_YEARLY_PRICE_MINOR ?? 5000000);
 
   return (
     <div className={styles.shell}>
@@ -50,7 +60,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </form>
       </nav>
 
-      <main className={styles.content}>{activeView === 'billing' ? null : <PlansView />}</main>
+      <main className={styles.content}>
+        {activeView === 'return' ? <ReturnView /> : null}
+        {activeView === 'plans' ? (
+          <PlansView
+            subscription={subscription}
+            monthlyPriceMinor={monthlyPriceMinor}
+            yearlyPriceMinor={yearlyPriceMinor}
+          />
+        ) : null}
+      </main>
     </div>
   );
 }
