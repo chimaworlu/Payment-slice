@@ -68,6 +68,12 @@ export const resendLimiter: RateLimiter = {
   prefix: 'ratelimit:resend',
 };
 
+export const checkoutLimiter: RateLimiter = {
+  limit: 5,
+  windowMs: 60 * 1000,
+  prefix: 'ratelimit:checkout',
+};
+
 export async function checkRateLimit(
   limiter: RateLimiter,
   identifier: string
