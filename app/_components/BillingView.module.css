@@ -1,0 +1,158 @@
+.card {
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 32px;
+  background-color: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-surface-variant);
+  border-radius: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plan {
+  margin: 0;
+  font-family: var(--font-title-large-font-family), sans-serif;
+  font-size: var(--font-title-large-font-size);
+  line-height: var(--font-title-large-line-height);
+  font-weight: var(--font-title-large-font-weight);
+  letter-spacing: var(--font-title-large-letter-spacing);
+  color: var(--color-on-surface);
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: var(--font-label-small-font-family), sans-serif;
+  font-size: var(--font-label-small-font-size);
+  font-weight: var(--font-label-small-font-weight);
+  letter-spacing: var(--font-label-small-letter-spacing);
+}
+
+.badgeActive {
+  background-color: var(--color-success-container);
+  color: var(--color-on-success-container);
+}
+
+.badgeCanceled {
+  background-color: var(--color-error-container);
+  color: var(--color-on-error-container);
+}
+
+/* --color-warning-success-container is this token set's "on-warning-container"
+   text color (dark amber) despite the misleading name — pairs with
+   --color-warning-container the same way on-success/on-error pair with theirs. */
+.badgePastDue {
+  background-color: var(--color-warning-container);
+  color: var(--color-warning-success-container);
+}
+
+.badgeNeutral {
+  background-color: var(--color-surface-variant);
+  color: var(--color-on-surface-variant);
+}
+
+.message {
+  margin: 0;
+  font-family: var(--font-body-medium-font-family), sans-serif;
+  font-size: var(--font-body-medium-font-size);
+  line-height: var(--font-body-medium-line-height);
+  color: var(--color-on-surface-variant);
+}
+
+.link {
+  color: var(--color-primary-color-role);
+  font-family: var(--font-label-large-font-family), sans-serif;
+  font-size: var(--font-label-large-font-size);
+  font-weight: var(--font-label-large-font-weight);
+  letter-spacing: var(--font-label-large-letter-spacing);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus {
+  outline: 2px solid var(--color-primary-color-role);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.button {
+  padding: 12px 16px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--color-primary-color-role);
+  color: var(--color-on-primary-color-role);
+  font-family: var(--font-label-large-font-family), sans-serif;
+  font-size: var(--font-label-large-font-size);
+  font-weight: var(--font-label-large-font-weight);
+  letter-spacing: var(--font-label-large-letter-spacing);
+  cursor: pointer;
+}
+
+.button:focus {
+  outline: 2px solid var(--color-primary-color-role);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  padding: 12px 16px;
+  border: 1px solid var(--color-surface-variant);
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--color-on-surface);
+  font-family: var(--font-label-large-font-family), sans-serif;
+  font-size: var(--font-label-large-font-size);
+  font-weight: var(--font-label-large-font-weight);
+  letter-spacing: var(--font-label-large-letter-spacing);
+  cursor: pointer;
+}
+
+.secondaryButton:focus {
+  outline: 2px solid var(--color-primary-color-role);
+  outline-offset: 2px;
+}
+
+.secondaryButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.confirmBox {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 12px;
+}
+
+.error {
+  margin: 0;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: var(--color-error-container);
+  color: var(--color-on-error-container);
+  font-family: var(--font-body-small-font-family), sans-serif;
+  font-size: var(--font-body-small-font-size);
+  line-height: var(--font-body-small-line-height);
+}

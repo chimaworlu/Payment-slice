@@ -4,6 +4,7 @@ import { auth, signOut } from '../../auth';
 import { prisma } from '../../lib/db';
 import PlansView from '../_components/PlansView';
 import ReturnView from '../_components/ReturnView';
+import BillingView from '../_components/BillingView';
 import styles from './page.module.css';
 
 interface DashboardPageProps {
@@ -21,7 +22,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const activeView = view === 'billing' || view === 'return' ? view : 'plans';
 
   const subscription =
-    activeView === 'plans'
+    activeView === 'plans' || activeView === 'billing'
       ? await prisma.subscription.findUnique({ where: { userId: session.user.id } })
       : null;
 
@@ -62,6 +63,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <main className={styles.content}>
         {activeView === 'return' ? <ReturnView /> : null}
+        {activeView === 'billing' ? <BillingView subscription={subscription} /> : null}
         {activeView === 'plans' ? (
           <PlansView
             subscription={subscription}
