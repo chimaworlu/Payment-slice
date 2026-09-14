@@ -6,6 +6,13 @@ import styles from './PlansView.module.css';
 
 type PlanId = 'FREE' | 'PRO_MONTHLY' | 'PRO_YEARLY';
 type PaidInterval = 'MONTHLY' | 'YEARLY';
+type CardAction = 'SUBSCRIBE' | 'UPGRADE' | 'DOWNGRADE' | 'DOWNGRADE_TO_FREE' | null;
+
+type CardUiState =
+  | { type: 'idle' }
+  | { type: 'upgrade-preview'; link: string; upgradeAmountNaira: number; creditNaira: number; daysRemaining: number }
+  | { type: 'downgrade-confirm' }
+  | { type: 'downgrade-success'; message: string };
 
 interface PlanCard {
   id: PlanId;
@@ -20,7 +27,7 @@ interface PlansViewProps {
   yearlyPriceMinor: number;
 }
 
-const UPGRADE_DOWNGRADE_LABELS: Record<PlanId, Partial<Record<PlanId, string>>> = {
+const BASE_LABELS: Record<PlanId, Partial<Record<PlanId, string>>> = {
   FREE: {
     PRO_MONTHLY: 'Subscribe Monthly',
     PRO_YEARLY: 'Subscribe Yearly',
@@ -35,17 +42,14 @@ const UPGRADE_DOWNGRADE_LABELS: Record<PlanId, Partial<Record<PlanId, string>>> 
   },
 };
 
-// Only PRO_MONTHLY/PRO_YEARLY map to a real checkout interval — there's no
-// "downgrade to free" endpoint yet, so that button stays unwired for now.
-const CARD_INTERVAL: Partial<Record<PlanId, PaidInterval>> = {
-  PRO_MONTHLY: 'MONTHLY',
-  PRO_YEARLY: 'YEARLY',
-};
-
 const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
 function formatNaira(amountMinor: number): string {
   return `${(amountMinor / 100).toLocaleString('en-NG')} Naira`;
+}
+
+function formatAmount(amountNaira: number): string {
+  return amountNaira.toLocaleString('en-NG');
 }
 
 function resolveCurrentPlan(subscription: Subscription | null): PlanId {
@@ -56,9 +60,23 @@ function resolveCurrentPlan(subscription: Subscription | null): PlanId {
   return subscription.interval === 'YEARLY' ? 'PRO_YEARLY' : 'PRO_MONTHLY';
 }
 
+function getCardAction(currentPlan: PlanId, cardId: PlanId): CardAction {
+  if (currentPlan === cardId) return null;
+  if (currentPlan === 'FREE') return 'SUBSCRIBE';
+  if (currentPlan === 'PRO_MONTHLY' && cardId === 'PRO_YEARLY') return 'UPGRADE';
+  if (currentPlan === 'PRO_YEARLY' && cardId === 'PRO_MONTHLY') return 'DOWNGRADE';
+  return 'DOWNGRADE_TO_FREE';
+}
+
+const CARD_INTERVAL: Partial<Record<PlanId, PaidInterval>> = {
+  PRO_MONTHLY: 'MONTHLY',
+  PRO_YEARLY: 'YEARLY',
+};
+
 export default function PlansView({ subscription, monthlyPriceMinor, yearlyPriceMinor }: PlansViewProps) {
-  const [loadingPlanId, setLoadingPlanId] = useState<PlanId | null>(null);
+  const [loadingCardId, setLoadingCardId] = useState<PlanId | null>(null);
   const [errorMessages, setErrorMessages] = useState<Partial<Record<PlanId, string>>>({});
+  const [cardStates, setCardStates] = useState<Partial<Record<PlanId, CardUiState>>>({});
 
   const currentPlan = resolveCurrentPlan(subscription);
 
@@ -78,12 +96,20 @@ export default function PlansView({ subscription, monthlyPriceMinor, yearlyPrice
     },
   ];
 
-  async function handleClick(cardId: PlanId) {
+  function setCardState(cardId: PlanId, state: CardUiState) {
+    setCardStates((prev) => ({ ...prev, [cardId]: state }));
+  }
+
+  function setError(cardId: PlanId, message: string | undefined) {
+    setErrorMessages((prev) => ({ ...prev, [cardId]: message }));
+  }
+
+  async function handleSubscribeClick(cardId: PlanId) {
     const interval = CARD_INTERVAL[cardId];
     if (!interval) return;
 
-    setErrorMessages((prev) => ({ ...prev, [cardId]: undefined }));
-    setLoadingPlanId(cardId);
+    setError(cardId, undefined);
+    setLoadingCardId(cardId);
 
     try {
       const response = await fetch('/api/payment/checkout', {
@@ -99,15 +125,88 @@ export default function PlansView({ subscription, monthlyPriceMinor, yearlyPrice
         return;
       }
 
-      if (response.status === 400 || response.status === 429) {
-        setErrorMessages((prev) => ({ ...prev, [cardId]: data?.message ?? GENERIC_ERROR }));
+      setError(cardId, response.status === 400 || response.status === 429 ? data?.message ?? GENERIC_ERROR : GENERIC_ERROR);
+    } catch {
+      setError(cardId, GENERIC_ERROR);
+    } finally {
+      setLoadingCardId((current) => (current === cardId ? null : current));
+    }
+  }
+
+  async function handleUpgradeClick(cardId: PlanId) {
+    setError(cardId, undefined);
+    setLoadingCardId(cardId);
+
+    try {
+      const response = await fetch('/api/payment/upgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetInterval: 'YEARLY' }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (response.ok && data?.link) {
+        setCardState(cardId, {
+          type: 'upgrade-preview',
+          link: data.link,
+          upgradeAmountNaira: data.upgradeAmountNaira,
+          creditNaira: data.creditNaira,
+          daysRemaining: data.daysRemaining,
+        });
       } else {
-        setErrorMessages((prev) => ({ ...prev, [cardId]: GENERIC_ERROR }));
+        setError(cardId, response.status === 400 || response.status === 429 ? data?.message ?? GENERIC_ERROR : GENERIC_ERROR);
       }
     } catch {
-      setErrorMessages((prev) => ({ ...prev, [cardId]: GENERIC_ERROR }));
+      setError(cardId, GENERIC_ERROR);
     } finally {
-      setLoadingPlanId((current) => (current === cardId ? null : current));
+      setLoadingCardId((current) => (current === cardId ? null : current));
+    }
+  }
+
+  function handleUpgradeConfirm(cardId: PlanId) {
+    const state = cardStates[cardId];
+    if (state?.type === 'upgrade-preview') {
+      window.location.href = state.link;
+    }
+  }
+
+  function handleUpgradeCancel(cardId: PlanId) {
+    setCardState(cardId, { type: 'idle' });
+  }
+
+  function handleDowngradeStart(cardId: PlanId) {
+    setError(cardId, undefined);
+    setCardState(cardId, { type: 'downgrade-confirm' });
+  }
+
+  function handleDowngradeCancel(cardId: PlanId) {
+    setCardState(cardId, { type: 'idle' });
+  }
+
+  async function handleDowngradeConfirm(cardId: PlanId) {
+    setLoadingCardId(cardId);
+
+    try {
+      const response = await fetch('/api/payment/downgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetInterval: 'MONTHLY' }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (response.ok) {
+        setCardState(cardId, { type: 'downgrade-success', message: data?.message ?? '' });
+      } else {
+        setError(cardId, response.status === 400 || response.status === 429 ? data?.message ?? GENERIC_ERROR : GENERIC_ERROR);
+        setCardState(cardId, { type: 'idle' });
+      }
+    } catch {
+      setError(cardId, GENERIC_ERROR);
+      setCardState(cardId, { type: 'idle' });
+    } finally {
+      setLoadingCardId((current) => (current === cardId ? null : current));
     }
   }
 
@@ -115,9 +214,11 @@ export default function PlansView({ subscription, monthlyPriceMinor, yearlyPrice
     <div className={styles.grid}>
       {planCards.map((card) => {
         const isCurrentPlan = card.id === currentPlan;
-        const buttonLabel = isCurrentPlan ? null : UPGRADE_DOWNGRADE_LABELS[currentPlan][card.id];
-        const isWired = Boolean(CARD_INTERVAL[card.id]);
-        const isLoading = loadingPlanId === card.id;
+        const action = getCardAction(currentPlan, card.id);
+        const state = cardStates[card.id] ?? { type: 'idle' };
+        const isLoading = loadingCardId === card.id;
+        const isAnyLoading = loadingCardId !== null;
+        const baseLabel = isCurrentPlan ? null : BASE_LABELS[currentPlan][card.id];
 
         return (
           <div key={card.id} className={styles.card}>
@@ -127,14 +228,93 @@ export default function PlansView({ subscription, monthlyPriceMinor, yearlyPrice
             <p className={styles.price}>{card.price}</p>
             <p className={styles.description}>{card.description}</p>
 
-            {buttonLabel ? (
+            {action === 'SUBSCRIBE' ? (
               <button
                 type="button"
                 className={styles.button}
-                disabled={isWired && loadingPlanId !== null}
-                onClick={() => handleClick(card.id)}
+                disabled={isAnyLoading}
+                onClick={() => handleSubscribeClick(card.id)}
               >
-                {isLoading ? 'Please wait…' : buttonLabel}
+                {isLoading ? 'Please wait…' : baseLabel}
+              </button>
+            ) : null}
+
+            {action === 'UPGRADE' ? (
+              state.type === 'upgrade-preview' ? (
+                <div className={styles.confirmBox}>
+                  <p className={styles.message}>
+                    You will be charged ₦{formatAmount(state.upgradeAmountNaira)} today. ₦
+                    {formatAmount(state.creditNaira)} credit applied for {state.daysRemaining} remaining days on your
+                    monthly plan. Proceed?
+                  </p>
+                  <div className={styles.confirmActions}>
+                    <button type="button" className={styles.button} onClick={() => handleUpgradeConfirm(card.id)}>
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={() => handleUpgradeCancel(card.id)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.button}
+                  disabled={isAnyLoading}
+                  onClick={() => handleUpgradeClick(card.id)}
+                >
+                  {isLoading ? 'Please wait…' : baseLabel}
+                </button>
+              )
+            ) : null}
+
+            {action === 'DOWNGRADE' ? (
+              state.type === 'downgrade-success' ? (
+                <p className={styles.success}>{state.message}</p>
+              ) : state.type === 'downgrade-confirm' ? (
+                <div className={styles.confirmBox}>
+                  <p className={styles.message}>
+                    Your plan will change to monthly at the end of your current period. You will not be charged now.
+                    Confirm?
+                  </p>
+                  <div className={styles.confirmActions}>
+                    <button
+                      type="button"
+                      className={styles.button}
+                      disabled={isLoading}
+                      onClick={() => handleDowngradeConfirm(card.id)}
+                    >
+                      {isLoading ? 'Please wait…' : 'Confirm'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={isLoading}
+                      onClick={() => handleDowngradeCancel(card.id)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.button}
+                  disabled={isAnyLoading}
+                  onClick={() => handleDowngradeStart(card.id)}
+                >
+                  {baseLabel}
+                </button>
+              )
+            ) : null}
+
+            {action === 'DOWNGRADE_TO_FREE' ? (
+              <button type="button" className={styles.button} disabled title="Contact support to cancel your subscription">
+                {baseLabel}
               </button>
             ) : null}
 

@@ -77,6 +77,7 @@ export default function BillingView({ subscription: initialSubscription }: Billi
   }
 
   const currentPeriodEnd = subscription.currentPeriodEnd ? formatDate(subscription.currentPeriodEnd) : null;
+  const isProMonthly = subscription.plan === 'PRO' && subscription.interval === 'MONTHLY';
 
   return (
     <div className={styles.card}>
@@ -88,6 +89,12 @@ export default function BillingView({ subscription: initialSubscription }: Billi
       {subscription.status === 'ACTIVE' && !subscription.cancelAtPeriodEnd && currentPeriodEnd ? (
         <>
           <p className={styles.message}>Renews on {currentPeriodEnd}</p>
+
+          {isProMonthly ? (
+            <Link href="/dashboard?view=plans" className={styles.link}>
+              Upgrade to Yearly and save
+            </Link>
+          ) : null}
 
           {isConfirming ? (
             <div className={styles.confirmBox}>
@@ -124,9 +131,13 @@ export default function BillingView({ subscription: initialSubscription }: Billi
       ) : null}
 
       {subscription.status === 'ACTIVE' && subscription.cancelAtPeriodEnd && currentPeriodEnd ? (
-        <p className={styles.message}>
-          Your plan will end on {currentPeriodEnd}. You will not be charged again.
-        </p>
+        subscription.pendingInterval === 'MONTHLY' ? (
+          <p className={styles.message}>Your plan will change to monthly on {currentPeriodEnd}</p>
+        ) : (
+          <p className={styles.message}>
+            Your plan will end on {currentPeriodEnd}. You will not be charged again.
+          </p>
+        )
       ) : null}
 
       {subscription.status === 'CANCELED' && currentPeriodEnd ? (
