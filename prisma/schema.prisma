@@ -20,6 +20,8 @@ model User {
   sessions              Session[]
   verificationCodes     VerificationCode[]
   passwordResetTokens   PasswordResetToken[]
+  subscription          Subscription?
+  transactions          Transaction[]
 }
 
 model Session {
@@ -44,6 +46,73 @@ model VerificationCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum PlanType {
+  FREE
+  PRO
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  PAUSED
+}
+
+enum TransactionType {
+  SUBSCRIPTION_CHARGE
+  UPGRADE
+  DOWNGRADE
+  CANCELLATION
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model Subscription {
+  id                 String              @id @default(cuid())
+  userId             String              @unique
+  plan               PlanType
+  interval           BillingInterval?
+  status             SubscriptionStatus
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean             @default(false)
+  providerRef        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Transaction {
+  id          String            @id @default(cuid())
+  userId      String
+  type        TransactionType
+  status      TransactionStatus
+  amountMinor Int?
+  currency    String            @default("NGN")
+  interval    BillingInterval?
+  providerRef String?
+  description String?
+  createdAt   DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([providerRef])
 }
 
 model PasswordResetToken {
