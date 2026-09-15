@@ -751,7 +751,7 @@ the migration and regenerate the client cleanly, then restarted the dev server.
   `https://yourdomain.com/api/payment/webhook` and Flutterwave would call it 
   directly. The dev simulation route handles this gap in development only.
 
-  ## Section 8: If I Built This Again
+## Section 8: If I Built This Again
 
 If I built this slice again I would design the webhook handling strategy before 
 writing a single route. The biggest time loss in this build was discovering 
