@@ -1,14 +1,44 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import styles from './ReturnView.module.css';
+
+const IS_DEV = process.env.NODE_ENV === 'development';
 
 function ReturnContent() {
   const searchParams = useSearchParams();
   const status = searchParams.get('status');
   const txRef = searchParams.get('tx_ref');
+  const transactionId = searchParams.get('transaction_id');
+
+  const [simulateStatus, setSimulateStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+
+  useEffect(() => {
+    if (!IS_DEV || status !== 'successful' || !txRef || !transactionId) {
+      return;
+    }
+
+    let cancelled = false;
+    setSimulateStatus('running');
+
+    fetch('/api/payment/webhook/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactionId, txRef }),
+    })
+      .then(() => {
+        if (!cancelled) setSimulateStatus('done');
+      })
+      .catch(() => {
+        if (!cancelled) setSimulateStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, txRef, transactionId]);
 
   let message: string;
   let linkHref: string;
@@ -32,6 +62,14 @@ function ReturnContent() {
     <div className={styles.card}>
       <p className={styles.message}>{message}</p>
       {txRef ? <p className={styles.reference}>Reference: {txRef}</p> : null}
+
+      {IS_DEV && status === 'successful' && simulateStatus === 'running' ? (
+        <p className={styles.devNotice}>Dev mode: simulating webhook...</p>
+      ) : null}
+      {IS_DEV && status === 'successful' && simulateStatus === 'done' ? (
+        <p className={styles.devNotice}>Webhook simulated. Check your billing view.</p>
+      ) : null}
+
       <Link href={linkHref} className={styles.link}>
         {linkLabel}
       </Link>
